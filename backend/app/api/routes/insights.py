@@ -13,7 +13,7 @@ from app.api.schemas import (
 )
 from app.api.auth import get_current_active_user, User
 from app.infra.database import get_db_session
-from app.infra.repositories import InsightReportRepository
+from app.infra import InsightReportRepository
 from app.domain.value_objects import InsightReport
 
 

@@ -19,12 +19,16 @@ from ..core.config import settings
 logger = logging.getLogger(__name__)
 
 
-class BedrockServiceError(Exception):
+from app.core.exceptions import ExternalServiceError, RateLimitError
+
+class BedrockServiceError(ExternalServiceError):
     """Base exception for Bedrock service errors."""
-    pass
+    
+    def __init__(self, message: str, **kwargs):
+        super().__init__(message, service_name="AWS Bedrock", **kwargs)
 
 
-class BedrockRateLimitError(BedrockServiceError):
+class BedrockRateLimitError(RateLimitError):
     """Raised when Bedrock service rate limit is exceeded."""
     pass
 

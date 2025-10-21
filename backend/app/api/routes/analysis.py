@@ -12,7 +12,7 @@ from app.api.schemas import (
 )
 from app.api.auth import get_current_active_user, User, require_roles
 from app.infra.database import get_db_session
-from app.infra.repositories import HealthDataRepository, InsightReportRepository
+from app.infra import HealthDataRepository, InsightReportRepository
 from app.agents.orchestrator import AgentOrchestrator
 from app.domain.value_objects import InsightReport
 

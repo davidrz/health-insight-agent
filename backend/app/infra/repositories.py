@@ -21,6 +21,17 @@ from ..domain.repositories import (
     HealthDataRepository, InsightReportRepository, PatientRepository,
     RepositoryError, NotFoundError, DuplicateError, ValidationError
 )
+
+# Export concrete implementations
+__all__ = [
+    "SQLAlchemyHealthDataRepository",
+    "SQLAlchemyInsightReportRepository", 
+    "SQLAlchemyPatientRepository",
+    "RepositoryError",
+    "NotFoundError",
+    "DuplicateError",
+    "ValidationError"
+]
 from .models import Patient, HealthRecord, InsightReport as InsightReportModel
 from .cache import cache_manager
 
@@ -799,6 +810,58 @@ class SQLAlchemyInsightReportRepository(InsightReportRepository):
             generated_at=datetime.fromisoformat(data["generated_at"]),
             metadata=data.get("metadata", {}),
         )
+    
+    async def get_by_patient_id_paginated(
+        self,
+        patient_id: str,
+        limit: int = 10,
+        offset: int = 0,
+        min_confidence: float = 0.0
+    ) -> tuple[List[InsightReport], int]:
+        """Retrieve paginated insight reports for a patient."""
+        try:
+            # Get patient
+            patient = await self._get_patient_by_external_id(patient_id)
+            if not patient:
+                return [], 0
+            
+            # Build base query
+            base_query = (
+                select(InsightReportModel)
+                .where(
+                    and_(
+                        InsightReportModel.patient_id == patient.id,
+                        InsightReportModel.confidence_score >= min_confidence
+                    )
+                )
+            )
+            
+            # Get total count
+            count_stmt = select(func.count()).select_from(base_query.subquery())
+            count_result = await self.session.execute(count_stmt)
+            total_count = count_result.scalar()
+            
+            # Get paginated results
+            stmt = (
+                base_query
+                .order_by(desc(InsightReportModel.created_at))
+                .limit(limit)
+                .offset(offset)
+            )
+            result = await self.session.execute(stmt)
+            report_models = result.scalars().all()
+            
+            # Deserialize reports
+            reports = [
+                self._deserialize_insight_report(model.report_data, patient_id, model.id)
+                for model in report_models
+            ]
+            
+            return reports, total_count
+            
+        except Exception as e:
+            logger.error(f"Error retrieving paginated insight reports for patient {patient_id}: {e}")
+            raise RepositoryError(f"Failed to retrieve paginated insight reports: {e}")
 
 
 class SQLAlchemyPatientRepository(PatientRepository):

@@ -246,6 +246,28 @@ class InsightReportRepository(ABC):
             List of insight reports meeting the confidence threshold
         """
         pass
+    
+    @abstractmethod
+    async def get_by_patient_id_paginated(
+        self,
+        patient_id: str,
+        limit: int = 10,
+        offset: int = 0,
+        min_confidence: float = 0.0
+    ) -> tuple[List[InsightReport], int]:
+        """
+        Retrieve paginated insight reports for a patient.
+        
+        Args:
+            patient_id: The patient's unique identifier
+            limit: Maximum number of reports to return
+            offset: Number of reports to skip
+            min_confidence: Minimum confidence score filter
+            
+        Returns:
+            Tuple of (reports list, total count)
+        """
+        pass
 
 
 class PatientRepository(ABC):
@@ -345,22 +367,28 @@ class PatientRepository(ABC):
         pass
 
 
-# Custom exceptions for repository operations
-class RepositoryError(Exception):
+# Import custom exceptions from core module
+from app.core.exceptions import (
+    DatabaseError, NotFoundError as CoreNotFoundError, 
+    DuplicateResourceError, ValidationError as CoreValidationError
+)
+
+# Repository-specific exceptions that inherit from core exceptions
+class RepositoryError(DatabaseError):
     """Base exception for repository operations."""
     pass
 
 
-class NotFoundError(RepositoryError):
+class NotFoundError(CoreNotFoundError):
     """Raised when a requested entity is not found."""
     pass
 
 
-class DuplicateError(RepositoryError):
+class DuplicateError(DuplicateResourceError):
     """Raised when attempting to create a duplicate entity."""
     pass
 
 
-class ValidationError(RepositoryError):
+class ValidationError(CoreValidationError):
     """Raised when entity validation fails during repository operations."""
     pass

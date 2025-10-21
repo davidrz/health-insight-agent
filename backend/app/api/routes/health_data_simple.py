@@ -1,5 +1,5 @@
 """
-Health data endpoints for the Health Insight Agent API.
+Health data endpoints for the Health Insight Agent API (Laboratory version - no auth).
 """
 
 from uuid import UUID
@@ -11,7 +11,6 @@ from app.api.schemas import (
     HealthDataRequest, HealthDataResponse, ErrorResponse,
     PaginationParams, InsightReportsListResponse
 )
-from app.api.auth import get_current_active_user, User, require_roles
 from app.infra.database import get_db_session
 from app.domain.entities import HealthData, VitalSigns, LabResult, Symptom, MedicalHistory
 from app.domain.value_objects import InsightReport
@@ -27,8 +26,6 @@ router = APIRouter()
     status_code=status.HTTP_201_CREATED,
     responses={
         400: {"model": ErrorResponse, "description": "Invalid health data"},
-        401: {"model": ErrorResponse, "description": "Authentication required"},
-        403: {"model": ErrorResponse, "description": "Insufficient permissions"},
         422: {"model": ErrorResponse, "description": "Validation error"}
     },
     summary="Upload health data",
@@ -36,7 +33,6 @@ router = APIRouter()
 )
 async def upload_health_data(
     health_data_request: HealthDataRequest,
-    current_user: User = Depends(require_roles(["healthcare_provider", "patient"])),
     db: AsyncSession = Depends(get_db_session)
 ):
     """
@@ -47,19 +43,10 @@ async def upload_health_data(
     - **lab_results**: Laboratory test results (optional)
     - **symptoms**: Patient-reported symptoms (optional)
     - **medical_history**: Medical history information (optional)
-    
-    Requires authentication and appropriate permissions.
     """
     try:
         # Convert request to domain entity
         health_data = _convert_request_to_health_data(health_data_request)
-        
-        # Validate patient access permissions
-        if "patient" in current_user.roles and health_data.patient_id != current_user.user_id:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Patients can only upload their own health data"
-            )
         
         # Save health data using repository
         health_repo = HealthDataRepository(db)
@@ -88,8 +75,6 @@ async def upload_health_data(
     "/health-data/{patient_id}",
     response_model=List[HealthDataResponse],
     responses={
-        401: {"model": ErrorResponse, "description": "Authentication required"},
-        403: {"model": ErrorResponse, "description": "Insufficient permissions"},
         404: {"model": ErrorResponse, "description": "Patient not found"}
     },
     summary="Get patient health data",
@@ -99,7 +84,6 @@ async def get_patient_health_data(
     patient_id: str,
     limit: int = Query(10, ge=1, le=100, description="Number of records to return"),
     offset: int = Query(0, ge=0, description="Number of records to skip"),
-    current_user: User = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db_session)
 ):
     """
@@ -111,13 +95,6 @@ async def get_patient_health_data(
     
     Returns list of health data records ordered by timestamp (newest first).
     """
-    # Validate patient access permissions
-    if "patient" in current_user.roles and patient_id != current_user.user_id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Patients can only access their own health data"
-        )
-    
     try:
         health_repo = HealthDataRepository(db)
         health_records = await health_repo.get_by_patient_id(
@@ -153,8 +130,6 @@ async def get_patient_health_data(
     "/health-data/{patient_id}/latest",
     response_model=HealthDataResponse,
     responses={
-        401: {"model": ErrorResponse, "description": "Authentication required"},
-        403: {"model": ErrorResponse, "description": "Insufficient permissions"},
         404: {"model": ErrorResponse, "description": "No health data found"}
     },
     summary="Get latest health data",
@@ -162,7 +137,6 @@ async def get_patient_health_data(
 )
 async def get_latest_health_data(
     patient_id: str,
-    current_user: User = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db_session)
 ):
     """
@@ -172,13 +146,6 @@ async def get_latest_health_data(
     
     Returns the latest health data record.
     """
-    # Validate patient access permissions
-    if "patient" in current_user.roles and patient_id != current_user.user_id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Patients can only access their own health data"
-        )
-    
     try:
         health_repo = HealthDataRepository(db)
         latest_record = await health_repo.get_latest_by_patient_id(patient_id)

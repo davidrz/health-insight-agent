@@ -2,21 +2,25 @@
 Dashboard endpoints for the Health Insight Agent API.
 """
 
-from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, status
+import logging
+from typing import List, Optional, Dict, Any
+from uuid import uuid4
+from fastapi import APIRouter, Depends, HTTPException, status, WebSocket, WebSocketDisconnect, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.schemas import (
     DashboardResponse, DashboardData, HealthMetricSummary,
-    ErrorResponse
+    ErrorResponse, BaseResponse
 )
 from app.api.auth import get_current_active_user, User
 from app.infra.database import get_db_session
-from app.infra.repositories import HealthDataRepository, InsightReportRepository
+from app.infra import HealthDataRepository, InsightReportRepository
 from app.domain.entities import HealthData, VitalSigns
 from app.domain.value_objects import InsightReport, RecommendationPriority
+from app.services.dashboard_service import DashboardAggregationService, DashboardMetricsTransformer
+from app.services.websocket_manager import websocket_manager
 
-
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
@@ -33,6 +37,7 @@ router = APIRouter()
 )
 async def get_dashboard_data(
     patient_id: str,
+    force_refresh: bool = Query(False, description="Force refresh of cached data"),
     current_user: User = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db_session)
 ):
@@ -40,6 +45,7 @@ async def get_dashboard_data(
     Retrieve comprehensive dashboard data for a patient.
     
     - **patient_id**: Unique identifier for the patient
+    - **force_refresh**: Skip cache and force data refresh
     
     Returns dashboard data including:
     - Current health metrics and trends
@@ -60,30 +66,12 @@ async def get_dashboard_data(
         health_repo = HealthDataRepository(db)
         insight_repo = InsightReportRepository(db)
         
-        # Get recent health data for metrics
-        recent_health_data = await health_repo.get_by_patient_id(
-            patient_id, limit=10, offset=0
-        )
+        # Create dashboard service
+        dashboard_service = DashboardAggregationService(health_repo, insight_repo)
         
-        if not recent_health_data:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="No health data found for this patient"
-            )
-        
-        # Get latest insights
-        latest_insights = await insight_repo.get_by_patient_id_paginated(
-            patient_id=patient_id,
-            limit=5,
-            offset=0,
-            min_confidence=0.7  # Only high confidence insights for dashboard
-        )
-        
-        # Build dashboard data
-        dashboard_data = await _build_dashboard_data(
-            patient_id=patient_id,
-            health_data_list=recent_health_data,
-            insight_reports=latest_insights[0] if latest_insights else []
+        # Get dashboard data (with caching)
+        dashboard_data = await dashboard_service.get_dashboard_data(
+            patient_id, force_refresh=force_refresh
         )
         
         return DashboardResponse(
@@ -100,168 +88,196 @@ async def get_dashboard_data(
         )
 
 
-async def _build_dashboard_data(
+@router.get(
+    "/dashboard/{patient_id}/time-series",
+    response_model=BaseResponse,
+    summary="Get time series data for dashboard charts",
+    description="Retrieve time series data for visualization in dashboard charts"
+)
+async def get_dashboard_time_series(
     patient_id: str,
-    health_data_list: List[HealthData],
-    insight_reports: List[InsightReport]
-) -> DashboardData:
-    """Build dashboard data from health records and insights"""
-    from app.api.schemas import HealthInsightSchema, RecommendationSchema
+    metric_type: str = Query(..., description="Type of metrics: 'vitals' or 'labs'"),
+    days: int = Query(30, ge=1, le=365, description="Number of days to include"),
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db_session)
+):
+    """Get time series data for dashboard visualization."""
+    # Validate patient access permissions
+    if "patient" in current_user.roles and patient_id != current_user.user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Patients can only access their own data"
+        )
     
-    # Calculate health metrics summaries
-    health_metrics = _calculate_health_metrics(health_data_list)
-    
-    # Get recent high-confidence insights
-    recent_insights = []
-    urgent_recommendations = []
-    last_analysis_date = None
-    overall_health_score = None
-    
-    if insight_reports:
-        # Get the most recent report
-        latest_report = insight_reports[0]
-        last_analysis_date = latest_report.generated_at
+    try:
+        health_repo = HealthDataRepository(db)
         
-        # Calculate overall health score based on risk assessment
-        if latest_report.risk_assessment:
-            overall_health_score = _calculate_health_score(latest_report.risk_assessment)
+        # Get health data for the specified period
+        from datetime import datetime, timedelta
+        end_date = datetime.utcnow()
+        start_date = end_date - timedelta(days=days)
         
-        # Collect recent insights (high confidence only)
-        for report in insight_reports[:3]:  # Last 3 reports
-            for insight in report.high_confidence_insights:
-                recent_insights.append(
-                    HealthInsightSchema(
-                        insight_type=insight.insight_type,
-                        title=insight.title,
-                        description=insight.description,
-                        confidence_score=insight.confidence_score,
-                        supporting_data=insight.supporting_data,
-                        generated_at=insight.generated_at
-                    )
-                )
+        health_data_list = await health_repo.get_by_patient_id_and_date_range(
+            patient_id, start_date, end_date
+        )
         
-        # Collect urgent recommendations
-        for report in insight_reports:
-            for rec in report.urgent_recommendations:
-                urgent_recommendations.append(
-                    RecommendationSchema(
-                        recommendation_type=rec.recommendation_type,
-                        priority=rec.priority,
-                        title=rec.title,
-                        description=rec.description,
-                        rationale=rec.rationale,
-                        expected_outcome=rec.expected_outcome,
-                        timeframe=rec.timeframe,
-                        created_at=rec.created_at
-                    )
-                )
+        # Transform data for visualization
+        time_series_data = DashboardMetricsTransformer.transform_time_series_data(
+            health_data_list, metric_type, days
+        )
+        
+        return BaseResponse(
+            success=True,
+            message="Time series data retrieved successfully",
+            **{"data": time_series_data}
+        )
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to retrieve time series data"
+        )
+
+
+@router.get(
+    "/dashboard/{patient_id}/risk-distribution",
+    response_model=BaseResponse,
+    summary="Get risk distribution data",
+    description="Retrieve risk assessment distribution data for dashboard charts"
+)
+async def get_risk_distribution(
+    patient_id: str,
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db_session)
+):
+    """Get risk distribution data for dashboard visualization."""
+    # Validate patient access permissions
+    if "patient" in current_user.roles and patient_id != current_user.user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Patients can only access their own data"
+        )
     
-    return DashboardData(
-        patient_id=patient_id,
-        health_metrics=health_metrics,
-        recent_insights=recent_insights[:5],  # Limit to 5 most recent
-        urgent_recommendations=urgent_recommendations[:3],  # Limit to 3 most urgent
-        overall_health_score=overall_health_score,
-        last_analysis_date=last_analysis_date
+    try:
+        insight_repo = InsightReportRepository(db)
+        
+        # Get recent insight reports
+        insight_reports, _ = await insight_repo.get_by_patient_id_paginated(
+            patient_id, limit=10, offset=0
+        )
+        
+        # Transform data for visualization
+        risk_data = DashboardMetricsTransformer.transform_risk_distribution(insight_reports)
+        
+        return BaseResponse(
+            success=True,
+            message="Risk distribution data retrieved successfully",
+            **{"data": risk_data}
+        )
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to retrieve risk distribution data"
+        )
+
+
+@router.post(
+    "/dashboard/{patient_id}/invalidate-cache",
+    response_model=BaseResponse,
+    summary="Invalidate dashboard cache",
+    description="Force invalidation of cached dashboard data for a patient"
+)
+async def invalidate_dashboard_cache(
+    patient_id: str,
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db_session)
+):
+    """Invalidate cached dashboard data for a patient."""
+    # Validate patient access permissions (only healthcare providers can invalidate cache)
+    if "patient" in current_user.roles:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Patients cannot invalidate cache"
+        )
+    
+    try:
+        health_repo = HealthDataRepository(db)
+        insight_repo = InsightReportRepository(db)
+        dashboard_service = DashboardAggregationService(health_repo, insight_repo)
+        
+        # Invalidate cache
+        success = await dashboard_service.invalidate_patient_cache(patient_id)
+        
+        if success:
+            # Notify connected WebSocket clients about cache invalidation
+            await websocket_manager.broadcast_patient_update(
+                patient_id,
+                "cache_invalidated",
+                {"message": "Dashboard cache has been invalidated"}
+            )
+        
+        return BaseResponse(
+            success=success,
+            message="Dashboard cache invalidated successfully" if success else "Failed to invalidate cache"
+        )
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to invalidate dashboard cache"
+        )
+
+
+@router.websocket("/dashboard/{patient_id}/ws")
+async def dashboard_websocket_endpoint(
+    websocket: WebSocket,
+    patient_id: str,
+    client_id: str = Query(..., description="Unique client identifier")
+):
+    """WebSocket endpoint for real-time dashboard updates."""
+    try:
+        # Connect client
+        connection = await websocket_manager.connect(websocket, client_id, patient_id)
+        
+        try:
+            while True:
+                # Wait for messages from client
+                data = await websocket.receive_text()
+                await websocket_manager.handle_message(client_id, data)
+                
+        except WebSocketDisconnect:
+            pass
+        
+    except Exception as e:
+        logger.error(f"WebSocket error for client {client_id}: {e}")
+    
+    finally:
+        # Disconnect client
+        await websocket_manager.disconnect(client_id)
+
+
+@router.get(
+    "/dashboard/websocket/stats",
+    response_model=BaseResponse,
+    summary="Get WebSocket connection statistics",
+    description="Retrieve statistics about active WebSocket connections"
+)
+async def get_websocket_stats(
+    current_user: User = Depends(get_current_active_user)
+):
+    """Get WebSocket connection statistics (admin only)."""
+    # Only allow admin users to view connection stats
+    if "admin" not in current_user.roles:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access required"
+        )
+    
+    stats = websocket_manager.get_connection_stats()
+    
+    return BaseResponse(
+        success=True,
+        message="WebSocket statistics retrieved successfully",
+        **{"data": stats}
     )
-
-
-def _calculate_health_metrics(health_data_list: List[HealthData]) -> List[HealthMetricSummary]:
-    """Calculate health metric summaries from recent health data"""
-    if not health_data_list:
-        return []
-    
-    metrics = []
-    
-    # Get latest vitals for current values
-    latest_data = health_data_list[0]
-    if latest_data.vitals:
-        vitals = latest_data.vitals
-        
-        # Heart rate metric
-        if vitals.heart_rate is not None:
-            trend = _calculate_trend([
-                data.vitals.heart_rate for data in health_data_list 
-                if data.vitals and data.vitals.heart_rate is not None
-            ])
-            metrics.append(HealthMetricSummary(
-                metric_name="Heart Rate",
-                current_value=float(vitals.heart_rate),
-                trend=trend,
-                last_updated=vitals.measured_at
-            ))
-        
-        # Blood pressure systolic
-        if vitals.blood_pressure_systolic is not None:
-            trend = _calculate_trend([
-                data.vitals.blood_pressure_systolic for data in health_data_list 
-                if data.vitals and data.vitals.blood_pressure_systolic is not None
-            ])
-            metrics.append(HealthMetricSummary(
-                metric_name="Blood Pressure (Systolic)",
-                current_value=float(vitals.blood_pressure_systolic),
-                trend=trend,
-                last_updated=vitals.measured_at
-            ))
-        
-        # Temperature
-        if vitals.temperature is not None:
-            trend = _calculate_trend([
-                data.vitals.temperature for data in health_data_list 
-                if data.vitals and data.vitals.temperature is not None
-            ])
-            metrics.append(HealthMetricSummary(
-                metric_name="Temperature",
-                current_value=vitals.temperature,
-                trend=trend,
-                last_updated=vitals.measured_at
-            ))
-    
-    return metrics
-
-
-def _calculate_trend(values: List[float]) -> str:
-    """Calculate trend from a list of values"""
-    if len(values) < 2:
-        return "stable"
-    
-    # Simple trend calculation - compare first and last values
-    first_val = values[-1]  # Most recent (first in list)
-    last_val = values[0]    # Oldest
-    
-    change_percent = ((first_val - last_val) / last_val) * 100 if last_val != 0 else 0
-    
-    if change_percent > 5:
-        return "improving" if first_val > last_val else "declining"
-    elif change_percent < -5:
-        return "declining" if first_val < last_val else "improving"
-    else:
-        return "stable"
-
-
-def _calculate_health_score(risk_assessment) -> float:
-    """Calculate overall health score from risk assessment"""
-    from app.domain.entities import RiskLevel
-    
-    # Base score starts at 100
-    base_score = 100.0
-    
-    # Deduct points based on overall risk level
-    risk_deductions = {
-        RiskLevel.LOW: 0,
-        RiskLevel.MODERATE: 15,
-        RiskLevel.HIGH: 35,
-        RiskLevel.VERY_HIGH: 60
-    }
-    
-    score = base_score - risk_deductions.get(risk_assessment.overall_risk_level, 0)
-    
-    # Additional deductions for high-risk factors
-    high_risk_factors = len(risk_assessment.high_risk_factors)
-    score -= high_risk_factors * 10
-    
-    # Apply confidence factor
-    score *= risk_assessment.confidence_score
-    
-    # Ensure score is between 0 and 100
-    return max(0.0, min(100.0, score))

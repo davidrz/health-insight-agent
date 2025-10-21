@@ -20,9 +20,13 @@ from ..core.config import settings
 logger = logging.getLogger(__name__)
 
 
-class SageMakerServiceError(Exception):
+from app.core.exceptions import ExternalServiceError
+
+class SageMakerServiceError(ExternalServiceError):
     """Base exception for SageMaker service errors."""
-    pass
+    
+    def __init__(self, message: str, **kwargs):
+        super().__init__(message, service_name="AWS SageMaker", **kwargs)
 
 
 class SageMakerEndpointError(SageMakerServiceError):

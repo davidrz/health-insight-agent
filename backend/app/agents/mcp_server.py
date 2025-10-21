@@ -20,17 +20,19 @@ from .base import (
 logger = logging.getLogger(__name__)
 
 
-class MCPServerError(Exception):
+from app.core.exceptions import ExternalServiceError, NotFoundError, BusinessLogicError
+
+class MCPServerError(ExternalServiceError):
     """Base exception for MCP server errors."""
     pass
 
 
-class AgentNotFoundError(MCPServerError):
+class AgentNotFoundError(NotFoundError):
     """Raised when requested agent is not found."""
     pass
 
 
-class TaskExecutionError(MCPServerError):
+class TaskExecutionError(BusinessLogicError):
     """Raised when task execution fails."""
     pass
 

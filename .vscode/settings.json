@@ -2,26 +2,53 @@
     "kiroAgent.configureMCP": "Disabled",
     "python.defaultInterpreterPath": "./backend/venv/bin/python",
     "python.terminal.activateEnvironment": true,
+    // Updated Python formatting and linting settings
+    "[python]": {
+        "editor.defaultFormatter": "ms-python.black-formatter",
+        "editor.formatOnSave": true,
+        "editor.codeActionsOnSave": {
+            "source.organizeImports": "explicit"
+        }
+    },
+    // Flake8 linting
     "python.linting.enabled": true,
     "python.linting.flake8Enabled": true,
-    "python.formatting.provider": "black",
-    "python.sortImports.args": ["--profile", "black"],
+    "python.linting.flake8Args": [
+        "--max-line-length=88",
+        "--extend-ignore=E203,W503"
+    ],
+    // Import sorting with isort
+    "isort.args": [
+        "--profile",
+        "black"
+    ],
+    // Global editor settings
     "editor.formatOnSave": true,
     "editor.codeActionsOnSave": {
-        "source.organizeImports": true
+        "source.organizeImports": "explicit"
     },
+    // File exclusions
     "files.exclude": {
         "**/__pycache__": true,
         "**/*.pyc": true,
         "**/venv": true,
         "**/.pytest_cache": true,
-        "**/.mypy_cache": true
+        "**/.mypy_cache": true,
+        "**/.coverage": true,
+        "**/htmlcov": true
     },
+    // Testing configuration
     "python.testing.pytestEnabled": true,
     "python.testing.pytestArgs": [
-        "backend"
+        "backend",
+        "-v",
+        "--tb=short"
     ],
+    "python.testing.unittestEnabled": false,
+    // Python analysis
     "python.analysis.extraPaths": [
         "./backend"
-    ]
+    ],
+    "python.analysis.autoImportCompletions": true,
+    "python.analysis.typeCheckingMode": "basic"
 }

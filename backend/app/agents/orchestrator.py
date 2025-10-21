@@ -25,7 +25,9 @@ from ..domain.value_objects import (
 logger = logging.getLogger(__name__)
 
 
-class OrchestrationError(Exception):
+from app.core.exceptions import BusinessLogicError
+
+class OrchestrationError(BusinessLogicError):
     """Base exception for orchestration errors."""
     pass
 

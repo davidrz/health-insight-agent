@@ -261,6 +261,28 @@ class HealthMetricSummary(BaseModel):
         }
 
 
+class TimeSeriesDataPoint(BaseModel):
+    """Schema for time series data point"""
+    timestamp: str
+    value: float
+    unit: Optional[str] = None
+    reference_range: Optional[Dict[str, Optional[float]]] = None
+
+
+class TimeSeriesData(BaseModel):
+    """Schema for time series data"""
+    type: str
+    data: Dict[str, List[TimeSeriesDataPoint]]
+    metadata: Dict[str, Any]
+
+
+class RiskDistributionData(BaseModel):
+    """Schema for risk distribution data"""
+    type: str
+    data: Dict[str, Any]
+    metadata: Dict[str, Any]
+
+
 class DashboardData(BaseModel):
     """Schema for dashboard data"""
     patient_id: str
@@ -281,13 +303,35 @@ class DashboardResponse(BaseResponse):
     dashboard: DashboardData
 
 
+class WebSocketMessage(BaseModel):
+    """Schema for WebSocket messages"""
+    type: str
+    data: Dict[str, Any]
+    timestamp: datetime
+    message_id: str
+
+    class Config:
+        json_encoders = {
+            datetime: lambda v: v.isoformat()
+        }
+
+
+class WebSocketConnectionStats(BaseModel):
+    """Schema for WebSocket connection statistics"""
+    total_connections: int
+    patient_subscriptions: int
+    topic_subscriptions: int
+    active_patients: List[str]
+    active_topics: List[str]
+
+
 # Pagination schemas
 class PaginationParams(BaseModel):
     """Schema for pagination parameters"""
     page: int = Field(1, ge=1, description="Page number")
     page_size: int = Field(10, ge=1, le=100, description="Items per page")
     sort_by: Optional[str] = Field(None, description="Field to sort by")
-    sort_order: str = Field("desc", regex="^(asc|desc)$", description="Sort order")
+    sort_order: str = Field("desc", pattern="^(asc|desc)$", description="Sort order")
 
 
 # Health check schemas

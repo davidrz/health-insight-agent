@@ -129,37 +129,40 @@ def require_roles(required_roles: list):
 
 # Mock user database for demonstration
 # In production, this would be replaced with actual database queries
-MOCK_USERS_DB = {
-    "healthcare_provider": {
-        "username": "healthcare_provider",
-        "hashed_password": get_password_hash("demo_password"),
-        "user_id": "hp_001",
-        "email": "provider@healthcare.com",
-        "roles": ["healthcare_provider", "user"],
-        "is_active": True
-    },
-    "patient": {
-        "username": "patient",
-        "hashed_password": get_password_hash("demo_password"),
-        "user_id": "patient_001",
-        "email": "patient@example.com",
-        "roles": ["patient", "user"],
-        "is_active": True
-    },
-    "admin": {
-        "username": "admin",
-        "hashed_password": get_password_hash("admin_password"),
-        "user_id": "admin_001",
-        "email": "admin@healthcare.com",
-        "roles": ["admin", "healthcare_provider", "user"],
-        "is_active": True
+def get_mock_users_db():
+    """Get mock users database with hashed passwords."""
+    return {
+        "healthcare_provider": {
+            "username": "healthcare_provider",
+            "hashed_password": get_password_hash("demo_password"),
+            "user_id": "hp_001",
+            "email": "provider@healthcare.com",
+            "roles": ["healthcare_provider", "user"],
+            "is_active": True
+        },
+        "patient": {
+            "username": "patient",
+            "hashed_password": get_password_hash("demo_password"),
+            "user_id": "patient_001",
+            "email": "patient@example.com",
+            "roles": ["patient", "user"],
+            "is_active": True
+        },
+        "admin": {
+            "username": "admin",
+            "hashed_password": get_password_hash("admin_password"),
+            "user_id": "admin_001",
+            "email": "admin@healthcare.com",
+            "roles": ["admin", "healthcare_provider", "user"],
+            "is_active": True
+        }
     }
-}
 
 
 def authenticate_user(username: str, password: str) -> Optional[Dict[str, Any]]:
     """Authenticate user with username and password"""
-    user = MOCK_USERS_DB.get(username)
+    users_db = get_mock_users_db()
+    user = users_db.get(username)
     if not user:
         return None
     
@@ -171,4 +174,5 @@ def authenticate_user(username: str, password: str) -> Optional[Dict[str, Any]]:
 
 def get_user_by_username(username: str) -> Optional[Dict[str, Any]]:
     """Get user by username"""
-    return MOCK_USERS_DB.get(username)
+    users_db = get_mock_users_db()
+    return users_db.get(username)
