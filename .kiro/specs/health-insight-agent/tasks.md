@@ -14,7 +14,7 @@
   - Create repository interfaces in domain layer
   - _Requirements: 1.1, 2.2, 5.2_
 
-- [ ] 3. Set up database infrastructure and repositories
+- [x] 3. Set up database infrastructure and repositories
   - Configure PostgreSQL database connection using SQLAlchemy
   - Create database models and migrations for patients, health_records, insight_reports tables
   - Implement repository pattern with concrete implementations for health data storage
