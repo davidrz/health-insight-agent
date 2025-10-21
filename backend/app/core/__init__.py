@@ -1,0 +1,1 @@
+# Core layer - Configuration, logging, and shared utilities

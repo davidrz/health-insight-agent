@@ -1,0 +1,1 @@
+# Agents layer - AI agent orchestration and MCP server

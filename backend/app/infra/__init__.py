@@ -1,0 +1,1 @@
+# Infrastructure layer - Database, external services, and implementations
