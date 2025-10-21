@@ -35,7 +35,7 @@
   - Add agent status monitoring and health checks
   - _Requirements: 1.2, 3.2, 4.3_
 
-- [ ] 6. Create API endpoints and request/response schemas
+- [x] 6. Create API endpoints and request/response schemas
   - Implement Pydantic schemas for health data validation and API responses
   - Create FastAPI routes for health data upload, insights retrieval, and analysis
   - Add authentication and authorization middleware using JWT tokens
