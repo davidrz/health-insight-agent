@@ -1,8 +1,8 @@
 """
 Infrastructure layer initialization for Health Insight Agent.
 
-This module provides initialization functions for database and cache
-infrastructure components.
+This module provides initialization functions for database, cache,
+and AWS service infrastructure components.
 """
 
 import logging
@@ -10,6 +10,8 @@ from typing import Optional
 
 from .database import init_database, close_database, DatabaseHealthCheck
 from .cache import init_cache, close_cache, CacheHealthCheck
+from .aws_bedrock import init_bedrock, close_bedrock, get_bedrock_client
+from .aws_sagemaker import init_sagemaker, close_sagemaker, get_sagemaker_client
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +32,20 @@ async def init_infrastructure() -> bool:
         await init_cache()
         logger.info("Cache infrastructure initialized")
         
+        # Initialize AWS Bedrock
+        bedrock_success = await init_bedrock()
+        if bedrock_success:
+            logger.info("Bedrock infrastructure initialized")
+        else:
+            logger.warning("Bedrock initialization failed - continuing without Bedrock")
+        
+        # Initialize AWS SageMaker
+        sagemaker_success = await init_sagemaker()
+        if sagemaker_success:
+            logger.info("SageMaker infrastructure initialized")
+        else:
+            logger.warning("SageMaker initialization failed - continuing without SageMaker")
+        
         logger.info("All infrastructure components initialized successfully")
         return True
         
@@ -41,6 +57,13 @@ async def init_infrastructure() -> bool:
 async def close_infrastructure() -> None:
     """Close all infrastructure connections."""
     try:
+        # Close AWS service connections
+        await close_bedrock()
+        logger.info("Bedrock connections closed")
+        
+        await close_sagemaker()
+        logger.info("SageMaker connections closed")
+        
         # Close cache connections
         await close_cache()
         logger.info("Cache connections closed")
@@ -65,6 +88,8 @@ async def health_check_infrastructure() -> dict:
     results = {
         "database": {"status": "unknown"},
         "cache": {"status": "unknown"},
+        "bedrock": {"status": "unknown"},
+        "sagemaker": {"status": "unknown"},
         "overall": {"status": "unknown"}
     }
     
@@ -83,14 +108,35 @@ async def health_check_infrastructure() -> dict:
         else:
             results["cache"] = {"status": "unhealthy", "error": "Connection failed"}
         
-        # Determine overall health
-        overall_healthy = db_healthy and cache_healthy
+        # Check Bedrock health
+        try:
+            bedrock_client = get_bedrock_client()
+            results["bedrock"] = await bedrock_client.health_check()
+            bedrock_healthy = results["bedrock"]["status"] == "healthy"
+        except Exception as e:
+            results["bedrock"] = {"status": "unhealthy", "error": str(e)}
+            bedrock_healthy = False
+        
+        # Check SageMaker health
+        try:
+            sagemaker_client = get_sagemaker_client()
+            results["sagemaker"] = await sagemaker_client.health_check()
+            sagemaker_healthy = results["sagemaker"]["status"] == "healthy"
+        except Exception as e:
+            results["sagemaker"] = {"status": "unhealthy", "error": str(e)}
+            sagemaker_healthy = False
+        
+        # Determine overall health (core services: database and cache must be healthy)
+        core_healthy = db_healthy and cache_healthy
         results["overall"] = {
-            "status": "healthy" if overall_healthy else "unhealthy",
+            "status": "healthy" if core_healthy else "unhealthy",
             "components_healthy": {
                 "database": db_healthy,
-                "cache": cache_healthy
-            }
+                "cache": cache_healthy,
+                "bedrock": bedrock_healthy,
+                "sagemaker": sagemaker_healthy
+            },
+            "note": "AWS services are optional - system can operate with degraded functionality"
         }
         
     except Exception as e:
@@ -109,5 +155,7 @@ __all__ = [
     "close_infrastructure", 
     "health_check_infrastructure",
     "DatabaseHealthCheck",
-    "CacheHealthCheck"
+    "CacheHealthCheck",
+    "get_bedrock_client",
+    "get_sagemaker_client"
 ]
