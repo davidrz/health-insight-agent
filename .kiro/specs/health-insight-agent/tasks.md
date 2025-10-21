@@ -7,7 +7,7 @@
   - Implement configuration management in core/config.py
   - _Requirements: 3.4, 4.2_
 
-- [ ] 2. Implement core domain models and entities
+- [x] 2. Implement core domain models and entities
   - Create health data domain entities (HealthData, VitalSigns, LabResult, Symptom, MedicalHistory)
   - Implement InsightReport and related value objects (HealthInsight, RiskAssessment, Recommendation)
   - Add data validation and business rules to domain entities
