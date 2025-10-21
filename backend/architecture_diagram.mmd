@@ -1,0 +1,86 @@
+graph TB
+    %% External Services
+    subgraph "AWS Services"
+        Bedrock[AWS Bedrock<br/>LLM Services]
+        SageMaker[AWS SageMaker<br/>ML Models]
+    end
+    
+    %% Application Layers
+    subgraph "Health Insight Agent System"
+        %% API Layer (Future)
+        subgraph "API Layer (Task 6)"
+            API[FastAPI<br/>REST Endpoints]
+            WebSocket[WebSocket<br/>Real-time Updates]
+        end
+        
+        %% Agents Layer
+        subgraph "Agents Layer"
+            Orchestrator[Agent Orchestrator<br/>Multi-agent coordination]
+            MCP[MCP Server<br/>Agent communication]
+            
+            subgraph "AI Agents"
+                BedrockAgent[Bedrock Agent<br/>NL Insights]
+                RiskAgent[SageMaker Risk Agent<br/>Risk Prediction]
+                AnomalyAgent[SageMaker Anomaly Agent<br/>Anomaly Detection]
+            end
+        end
+        
+        %% Domain Layer
+        subgraph "Domain Layer"
+            Entities[Domain Entities<br/>HealthData, VitalSigns, etc.]
+            ValueObjects[Value Objects<br/>InsightReport, RiskAssessment]
+            Services[Domain Services<br/>Business Logic]
+        end
+        
+        %% Infrastructure Layer
+        subgraph "Infrastructure Layer"
+            BedrockClient[Bedrock Client<br/>AWS Integration]
+            SageMakerClient[SageMaker Client<br/>ML Integration]
+            Database[PostgreSQL<br/>Data Persistence]
+            Cache[Redis Cache<br/>Performance]
+            Repositories[Data Repositories<br/>Data Access]
+        end
+    end
+    
+    %% External Database
+    PostgresDB[(PostgreSQL<br/>Database)]
+    RedisCache[(Redis<br/>Cache)]
+    
+    %% Connections
+    API --> Orchestrator
+    WebSocket --> Orchestrator
+    
+    Orchestrator --> MCP
+    MCP --> BedrockAgent
+    MCP --> RiskAgent
+    MCP --> AnomalyAgent
+    
+    BedrockAgent --> BedrockClient
+    RiskAgent --> SageMakerClient
+    AnomalyAgent --> SageMakerClient
+    
+    BedrockClient --> Bedrock
+    SageMakerClient --> SageMaker
+    
+    Orchestrator --> Services
+    Services --> Entities
+    Services --> ValueObjects
+    
+    Repositories --> Database
+    Cache --> RedisCache
+    Database --> PostgresDB
+    
+    %% Styling
+    classDef aws fill:#ff9900,stroke:#232f3e,stroke-width:2px,color:#fff
+    classDef agent fill:#4CAF50,stroke:#2E7D32,stroke-width:2px,color:#fff
+    classDef domain fill:#2196F3,stroke:#1565C0,stroke-width:2px,color:#fff
+    classDef infra fill:#9C27B0,stroke:#6A1B9A,stroke-width:2px,color:#fff
+    classDef api fill:#FF5722,stroke:#D84315,stroke-width:2px,color:#fff
+    classDef db fill:#607D8B,stroke:#37474F,stroke-width:2px,color:#fff
+    
+    class Bedrock,SageMaker aws
+    class Orchestrator,MCP,BedrockAgent,RiskAgent,AnomalyAgent agent
+    class Entities,ValueObjects,Services domain
+    class BedrockClient,SageMakerClient,Database,Cache,Repositories infra
+    class API,WebSocket api
+    class PostgresDB,RedisCache db
